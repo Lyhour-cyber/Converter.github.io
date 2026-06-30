@@ -1,0 +1,640 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>MediaDrop — URL → MP3 / MP4</title>
+
+  <!-- Bootstrap 5 -->
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet" />
+  <!-- Bootstrap Icons -->
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css" rel="stylesheet" />
+  <!-- Google Fonts -->
+  <link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;600;700;800&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet" />
+
+  <style>
+    /* ── Base ───────────────────────────────────────────────────── */
+    :root {
+      --bg:      #0b0d12;
+      --surface: #13161f;
+      --card:    #1a1e2b;
+      --border:  #272c3d;
+      --accent:  #5b6af5;
+      --accent2: #c850c0;
+      --green:   #22d3a5;
+      --red:     #f25c5c;
+      --text:    #e8ecf5;
+      --muted:   #7a83a0;
+      --radius:  14px;
+    }
+
+    *, *::before, *::after { box-sizing: border-box; }
+
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: 'Syne', sans-serif;
+      min-height: 100vh;
+      overflow-x: hidden;
+    }
+
+    /* ── Noise overlay ──────────────────────────────────────────── */
+    body::before {
+      content: '';
+      position: fixed; inset: 0;
+      background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.04'/%3E%3C/svg%3E");
+      pointer-events: none;
+      z-index: 0;
+    }
+
+    /* ── Glow blobs ─────────────────────────────────────────────── */
+    .blob {
+      position: fixed;
+      border-radius: 50%;
+      filter: blur(120px);
+      opacity: 0.15;
+      pointer-events: none;
+      z-index: 0;
+    }
+    .blob-1 { width: 500px; height: 500px; background: var(--accent);  top: -150px; left: -150px; }
+    .blob-2 { width: 400px; height: 400px; background: var(--accent2); bottom: -100px; right: -100px; }
+
+    /* ── Layout ─────────────────────────────────────────────────── */
+    .wrapper { position: relative; z-index: 1; max-width: 740px; margin: 0 auto; padding: 60px 20px 80px; }
+
+    /* ── Header ─────────────────────────────────────────────────── */
+    .logo-badge {
+      display: inline-flex; align-items: center; gap: 8px;
+      background: linear-gradient(135deg, var(--accent), var(--accent2));
+      border-radius: 100px; padding: 6px 16px;
+      font-size: .75rem; font-weight: 700; letter-spacing: .1em;
+      text-transform: uppercase; color: #fff;
+      margin-bottom: 20px;
+    }
+    h1 {
+      font-size: clamp(2rem, 5vw, 3.2rem);
+      font-weight: 800; line-height: 1.1;
+      background: linear-gradient(135deg, #fff 40%, var(--accent) 100%);
+      -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+      background-clip: text;
+      margin-bottom: 8px;
+    }
+    .subtitle { color: var(--muted); font-size: .95rem; margin-bottom: 44px; }
+
+    /* ── Card ───────────────────────────────────────────────────── */
+    .glass-card {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 32px;
+      box-shadow: 0 0 60px rgba(91,106,245,.06);
+    }
+
+    /* ── URL input ──────────────────────────────────────────────── */
+    .url-group { position: relative; }
+    .url-group .form-control {
+      background: var(--surface);
+      border: 1.5px solid var(--border);
+      border-radius: 10px;
+      color: var(--text);
+      font-family: 'DM Mono', monospace;
+      font-size: .9rem;
+      padding: 14px 130px 14px 18px;
+      transition: border-color .2s, box-shadow .2s;
+    }
+    .url-group .form-control::placeholder { color: var(--muted); }
+    .url-group .form-control:focus {
+      background: var(--surface);
+      border-color: var(--accent);
+      box-shadow: 0 0 0 3px rgba(91,106,245,.18);
+      color: var(--text);
+      outline: none;
+    }
+    .fetch-btn {
+      position: absolute; right: 8px; top: 50%; transform: translateY(-50%);
+      background: linear-gradient(135deg, var(--accent), var(--accent2));
+      border: none; border-radius: 7px;
+      color: #fff; font-family: 'Syne', sans-serif; font-weight: 700;
+      font-size: .82rem; letter-spacing: .05em;
+      padding: 8px 18px; cursor: pointer;
+      transition: opacity .2s, transform .15s;
+    }
+    .fetch-btn:hover  { opacity: .85; }
+    .fetch-btn:active { transform: translateY(-50%) scale(.97); }
+
+    /* ── Preview card ───────────────────────────────────────────── */
+    #previewBox {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 16px;
+      display: none;
+      animation: fadeUp .3s ease;
+    }
+    #previewBox img {
+      width: 96px; height: 60px;
+      object-fit: cover; border-radius: 6px;
+    }
+    .meta-title { font-weight: 700; font-size: .95rem; line-height: 1.3; }
+    .meta-sub   { color: var(--muted); font-size: .8rem; font-family: 'DM Mono', monospace; }
+
+    /* ── Options row ────────────────────────────────────────────── */
+    .option-label { color: var(--muted); font-size: .78rem; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; margin-bottom: 8px; }
+
+    .seg-group { display: flex; gap: 6px; }
+    .seg-btn {
+      flex: 1; background: var(--surface); border: 1.5px solid var(--border);
+      border-radius: 8px; color: var(--muted);
+      font-family: 'Syne', sans-serif; font-weight: 600;
+      font-size: .85rem; padding: 9px; cursor: pointer;
+      transition: all .2s;
+    }
+    .seg-btn.active {
+      background: linear-gradient(135deg, var(--accent), var(--accent2));
+      border-color: transparent; color: #fff;
+      box-shadow: 0 4px 14px rgba(91,106,245,.3);
+    }
+
+    .form-select {
+      background: var(--surface) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath fill='%237a83a0' d='M7.247 11.14L2.451 5.658C1.885 5.013 2.345 4 3.204 4h9.592a1 1 0 0 1 .753 1.659l-4.796 5.48a1 1 0 0 1-1.506 0z'/%3E%3C/svg%3E") no-repeat right 12px center / 12px;
+      border: 1.5px solid var(--border); border-radius: 8px;
+      color: var(--text); font-family: 'Syne', sans-serif;
+      font-size: .88rem; padding: 9px 36px 9px 14px;
+      appearance: none; -webkit-appearance: none;
+      transition: border-color .2s;
+    }
+    .form-select:focus { border-color: var(--accent); box-shadow: 0 0 0 3px rgba(91,106,245,.18); outline: none; background-color: var(--surface); color: var(--text); }
+    .form-select option { background: var(--card); }
+
+    /* ── Convert button ─────────────────────────────────────────── */
+    .convert-btn {
+      width: 100%; padding: 15px;
+      background: linear-gradient(135deg, var(--accent) 0%, var(--accent2) 100%);
+      border: none; border-radius: 10px;
+      color: #fff; font-family: 'Syne', sans-serif;
+      font-weight: 800; font-size: 1rem; letter-spacing: .04em;
+      cursor: pointer; position: relative; overflow: hidden;
+      transition: transform .15s, box-shadow .2s;
+      box-shadow: 0 4px 24px rgba(91,106,245,.35);
+    }
+    .convert-btn:hover  { transform: translateY(-1px); box-shadow: 0 8px 32px rgba(91,106,245,.45); }
+    .convert-btn:active { transform: translateY(0); }
+    .convert-btn:disabled { opacity: .55; cursor: not-allowed; transform: none; }
+
+    /* shimmer */
+    .convert-btn::after {
+      content: ''; position: absolute; inset: 0;
+      background: linear-gradient(90deg, transparent, rgba(255,255,255,.15), transparent);
+      transform: translateX(-100%);
+    }
+    .convert-btn:not(:disabled):hover::after {
+      animation: shimmer .7s ease forwards;
+    }
+    @keyframes shimmer { to { transform: translateX(100%); } }
+
+    /* ── Progress ───────────────────────────────────────────────── */
+    #progressSection { display: none; animation: fadeUp .3s ease; }
+
+    .prog-bar-wrap {
+      background: var(--surface); border-radius: 100px;
+      height: 8px; overflow: hidden; margin: 10px 0;
+    }
+    .prog-bar-fill {
+      height: 100%; border-radius: 100px;
+      background: linear-gradient(90deg, var(--accent), var(--accent2));
+      width: 0%; transition: width .4s ease;
+    }
+    .prog-meta { display: flex; justify-content: space-between; font-size: .78rem; color: var(--muted); font-family: 'DM Mono', monospace; }
+
+    .status-badge {
+      display: inline-flex; align-items: center; gap: 6px;
+      border-radius: 100px; padding: 4px 12px;
+      font-size: .78rem; font-weight: 700; letter-spacing: .06em;
+    }
+    .status-queued    { background: rgba(122,131,160,.15); color: var(--muted); }
+    .status-active    { background: rgba(91,106,245,.15);  color: var(--accent); }
+    .status-processing{ background: rgba(200,80,192,.15);  color: var(--accent2); }
+    .status-done      { background: rgba(34,211,165,.15);  color: var(--green); }
+    .status-error     { background: rgba(242,92,92,.15);   color: var(--red); }
+
+    /* pulse dot */
+    .dot {
+      width: 7px; height: 7px; border-radius: 50%;
+      background: currentColor;
+    }
+    .dot.pulse { animation: pulse 1.2s infinite; }
+    @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:.3} }
+
+    /* ── Download area ──────────────────────────────────────────── */
+    #downloadSection { display: none; animation: fadeUp .3s ease; }
+
+    .dl-card {
+      background: rgba(34,211,165,.06);
+      border: 1.5px solid rgba(34,211,165,.25);
+      border-radius: 10px; padding: 20px 24px;
+      display: flex; align-items: center; gap: 16px;
+    }
+    .dl-icon {
+      width: 52px; height: 52px; border-radius: 12px;
+      background: linear-gradient(135deg, var(--green) 0%, #10b981 100%);
+      display: flex; align-items: center; justify-content: center;
+      font-size: 1.4rem; color: #fff; flex-shrink: 0;
+    }
+    .dl-filename { font-family: 'DM Mono', monospace; font-size: .85rem; color: var(--text); word-break: break-all; }
+    .dl-sub      { font-size: .78rem; color: var(--muted); margin-top: 2px; }
+
+    .btn-dl {
+      margin-left: auto; flex-shrink: 0;
+      background: var(--green); border: none; border-radius: 8px;
+      color: #0b0d12; font-family: 'Syne', sans-serif;
+      font-weight: 800; font-size: .88rem;
+      padding: 10px 20px; cursor: pointer;
+      transition: opacity .2s, transform .15s;
+    }
+    .btn-dl:hover  { opacity: .85; }
+    .btn-dl:active { transform: scale(.97); }
+
+    .save-note {
+      color: var(--muted); font-size: .8rem; font-family: 'DM Mono', monospace;
+      margin-top: 10px;
+    }
+    .save-note i { color: var(--green); }
+
+    /* ── Error ──────────────────────────────────────────────────── */
+    #errorBox {
+      background: rgba(242,92,92,.08);
+      border: 1.5px solid rgba(242,92,92,.3);
+      border-radius: 10px; padding: 14px 18px;
+      color: var(--red); font-size: .88rem;
+      display: none; animation: fadeUp .3s ease;
+    }
+
+    /* ── History ────────────────────────────────────────────────── */
+    #historySection { display: none; }
+    .hist-header { color: var(--muted); font-size: .78rem; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; margin-bottom: 12px; }
+    .hist-item {
+      display: flex; align-items: center; gap: 12px;
+      background: var(--surface); border: 1px solid var(--border);
+      border-radius: 8px; padding: 11px 14px; margin-bottom: 6px;
+    }
+    .hist-item .hi-icon { font-size: 1.1rem; }
+    .hi-name { font-size: .85rem; font-family: 'DM Mono', monospace; flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .hi-dl   { font-size: .8rem; color: var(--accent); cursor: pointer; font-weight: 700; margin-left: auto; }
+
+    /* ── Misc ───────────────────────────────────────────────────── */
+    hr.divider { border-color: var(--border); margin: 28px 0; }
+
+    @keyframes fadeUp {
+      from { opacity: 0; transform: translateY(10px); }
+      to   { opacity: 1; transform: translateY(0); }
+    }
+
+    /* ── Responsive ─────────────────────────────────────────────── */
+    @media (max-width: 500px) {
+      .glass-card { padding: 22px 16px; }
+      h1 { font-size: 1.9rem; }
+      .dl-card { flex-wrap: wrap; }
+      .btn-dl { margin-left: 0; width: 100%; }
+    }
+  </style>
+</head>
+<body>
+
+<div class="blob blob-1"></div>
+<div class="blob blob-2"></div>
+
+<div class="wrapper">
+  <!-- Header -->
+  <div class="text-center">
+    <div class="logo-badge">
+      <i class="bi bi-music-note-beamed"></i>
+      MediaDrop
+    </div>
+    <h1>URL → MP3 &amp; MP4</h1>
+    <p class="subtitle">Paste any video link. Pick your format. Download in seconds.</p>
+  </div>
+
+  <!-- Main card -->
+  <div class="glass-card">
+
+    <!-- URL input -->
+    <div class="mb-4">
+      <div class="d-flex justify-content-between align-items-center">
+        <label class="option-label">Video URL</label>
+        <a href="#" class="option-label text-decoration-none" style="color:var(--accent)" data-bs-toggle="modal" data-bs-target="#helpModal">
+          <i class="bi bi-question-circle me-1"></i>How to find links?
+        </a>
+      </div>
+      <div class="url-group">
+        <input type="url" id="urlInput" class="form-control"
+               placeholder="https://youtube.com/watch?v=..." autocomplete="off" />
+        <button class="fetch-btn" onclick="fetchInfo()">
+          <i class="bi bi-search me-1"></i>Fetch
+        </button>
+      </div>
+    </div>
+
+    <!-- Preview -->
+    <div id="previewBox" class="mb-4">
+      <div class="d-flex gap-3 align-items-center">
+        <img id="prevThumb" src="" alt="thumb" />
+        <div>
+          <div class="meta-title" id="prevTitle">—</div>
+          <div class="meta-sub">
+            <i class="bi bi-clock me-1"></i><span id="prevDuration">—</span>
+            &nbsp;·&nbsp;
+            <i class="bi bi-person me-1"></i><span id="prevUploader">—</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Error box -->
+    <div id="errorBox" class="mb-3">
+      <i class="bi bi-exclamation-triangle-fill me-2"></i><span id="errorMsg"></span>
+    </div>
+
+    <!-- Format selector -->
+    <div class="row g-3 mb-4">
+      <div class="col-6">
+        <div class="option-label">Format</div>
+        <div class="seg-group">
+          <button class="seg-btn active" id="btnMp3" onclick="setFormat('mp3')">
+            <i class="bi bi-music-note-beamed me-1"></i>MP3
+          </button>
+          <button class="seg-btn" id="btnMp4" onclick="setFormat('mp4')">
+            <i class="bi bi-camera-video me-1"></i>MP4
+          </button>
+        </div>
+      </div>
+      <div class="col-6">
+        <div class="option-label">Quality</div>
+        <select class="form-select" id="qualitySelect">
+          <option value="best">Best</option>
+          <option value="high" selected>High</option>
+          <option value="medium">Medium</option>
+          <option value="low">Low</option>
+        </select>
+      </div>
+    </div>
+
+    <!-- Convert button -->
+    <button class="convert-btn" id="convertBtn" onclick="startConvert()">
+      <i class="bi bi-lightning-charge-fill me-2"></i>Convert &amp; Download
+    </button>
+
+    <!-- Progress section -->
+    <div id="progressSection" class="mt-4">
+      <div class="d-flex align-items-center justify-content-between mb-2">
+        <span style="font-weight:700; font-size:.9rem;">Converting…</span>
+        <span id="statusBadge" class="status-badge status-active">
+          <span class="dot pulse"></span>
+          <span id="statusText">Queued</span>
+        </span>
+      </div>
+      <div class="prog-bar-wrap">
+        <div class="prog-bar-fill" id="progBar"></div>
+      </div>
+      <div class="prog-meta">
+        <span id="progPct">0%</span>
+        <span id="progSpeed"></span>
+        <span id="progEta"></span>
+      </div>
+    </div>
+
+    <!-- Download section -->
+    <div id="downloadSection" class="mt-4">
+      <div class="dl-card">
+        <div class="dl-icon" id="dlIcon"><i class="bi bi-music-note-beamed"></i></div>
+        <div>
+          <div class="dl-filename" id="dlFilename">—</div>
+          <div class="dl-sub">Ready to download</div>
+        </div>
+        <button class="btn-dl" id="dlBtn">
+          <i class="bi bi-download me-1"></i>Download
+        </button>
+      </div>
+      <div class="save-note">
+        <i class="bi bi-folder-check me-1"></i>
+        Also saved locally to: <span id="savePath" style="color:var(--text)">~/Downloads/MediaConverter</span>
+      </div>
+    </div>
+
+  </div><!-- /glass-card -->
+
+  <!-- History -->
+  <div id="historySection" class="mt-4 glass-card">
+    <div class="hist-header"><i class="bi bi-clock-history me-1"></i>Recent Conversions</div>
+    <div id="historyList"></div>
+  </div>
+
+</div><!-- /wrapper -->
+
+<!-- Help Modal -->
+<div class="modal fade" id="helpModal" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog modal-dialog-centered">
+    <div class="modal-content" style="background: var(--card); border: 1px solid var(--border); color: var(--text);">
+      <div class="modal-header" style="border-bottom: 1px solid var(--border);">
+        <h5 class="modal-title font-weight-bold">How to find Video Streams</h5>
+        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+      </div>
+      <div class="modal-body" style="font-size: 0.9rem; line-height: 1.6;">
+        <p>If the standard URL doesn't work, follow these steps:</p>
+        <ol>
+          <li>Open the video page in <strong>Chrome</strong>.</li>
+          <li>Press <strong>F12</strong> and click the <strong>Network</strong> tab.</li>
+          <li>In the filter box, try searching for these one by one:
+            <code class="d-block mt-1 mb-1" style="color:var(--accent2)">m3u8</code>
+            <code class="d-block mb-1" style="color:var(--accent2)">mpd</code>
+            <code class="d-block mb-1" style="color:var(--accent2)">playlist</code>
+          </li>
+          <li><strong>Refresh the page</strong> (F5) and click Play on the video.</li>
+          <li>Right-click the result and select <strong>Copy → Copy link address</strong>.</li>
+        </ol>
+        <div class="alert alert-info" style="background: rgba(91,106,245,.1); border: 1px solid var(--accent); color: var(--text); font-size: 0.8rem;">
+          <i class="bi bi-info-circle me-2"></i>Note: If the video uses a <strong>blob:</strong> URL, it is encrypted (DRM) and cannot be downloaded.
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+<script>
+  /* ── State ─────────────────────────────────────────────────── */
+  let selectedFormat = 'mp3';
+  let currentJobId   = null;
+  let pollTimer      = null;
+  const history      = [];
+
+  /* ── Format toggle ─────────────────────────────────────────── */
+  function setFormat(fmt) {
+    selectedFormat = fmt;
+    document.getElementById('btnMp3').classList.toggle('active', fmt === 'mp3');
+    document.getElementById('btnMp4').classList.toggle('active', fmt === 'mp4');
+  }
+
+  /* ── Fetch video info ──────────────────────────────────────── */
+  async function fetchInfo() {
+    const url = document.getElementById('urlInput').value.trim();
+    if (!url) return showError('Please enter a URL first.');
+    hideError();
+
+    try {
+      const res  = await fetch('/api/info', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({url}) });
+      const data = await res.json();
+      if (data.error) { showError(data.error); return; }
+
+      document.getElementById('prevThumb').src     = data.thumbnail || '';
+      document.getElementById('prevTitle').textContent    = data.title    || '—';
+      document.getElementById('prevDuration').textContent  = data.duration  || '—';
+      document.getElementById('prevUploader').textContent  = data.uploader  || '—';
+      document.getElementById('previewBox').style.display = 'block';
+    } catch(e) {
+      showError('Could not reach the server. Is app.py running?');
+    }
+  }
+
+  /* ── Kick off conversion ────────────────────────────────────── */
+  async function startConvert() {
+    const url = document.getElementById('urlInput').value.trim();
+    if (!url) { showError('Please enter a URL.'); return; }
+    hideError();
+    resetResult();
+
+    document.getElementById('convertBtn').disabled = true;
+    showSection('progressSection');
+
+    try {
+      const res  = await fetch('/api/convert', {
+        method: 'POST',
+        headers: {'Content-Type':'application/json'},
+        body: JSON.stringify({ url, format: selectedFormat, quality: document.getElementById('qualitySelect').value })
+      });
+      const data = await res.json();
+      if (data.error) { showError(data.error); document.getElementById('convertBtn').disabled = false; return; }
+
+      currentJobId = data.job_id;
+      pollTimer    = setInterval(pollStatus, 1200);
+    } catch(e) {
+      showError('Server not reachable. Start app.py first.');
+      document.getElementById('convertBtn').disabled = false;
+    }
+  }
+
+  /* ── Poll status ────────────────────────────────────────────── */
+  async function pollStatus() {
+    if (!currentJobId) return;
+    try {
+      const res  = await fetch(`/api/status/${currentJobId}`);
+      const job  = await res.json();
+      updateProgress(job);
+
+      if (job.status === 'done')  { clearInterval(pollTimer); showDownload(job); }
+      if (job.status === 'error') { clearInterval(pollTimer); showError(job.error || 'Conversion failed.'); document.getElementById('convertBtn').disabled = false; }
+    } catch { /* retry next tick */ }
+  }
+
+  /* ── Update progress UI ─────────────────────────────────────── */
+  function updateProgress(job) {
+    const pct = Math.round(job.progress || 0);
+    document.getElementById('progBar').style.width = pct + '%';
+    document.getElementById('progPct').textContent  = pct + '%';
+    document.getElementById('progSpeed').textContent = job.speed || '';
+    document.getElementById('progEta').textContent   = job.eta   || '';
+
+    const badge = document.getElementById('statusBadge');
+    const text  = document.getElementById('statusText');
+    badge.className = 'status-badge';
+
+    const map = {
+      queued:     ['status-queued',     'Queued',     false],
+      downloading:['status-active',     'Downloading',true],
+      processing: ['status-processing', 'Processing', true],
+      done:       ['status-done',       'Done',       false],
+      error:      ['status-error',      'Error',      false],
+    };
+    const [cls, lbl, pulse] = map[job.status] || map.queued;
+    badge.classList.add(cls);
+    text.textContent = lbl;
+    badge.querySelector('.dot').classList.toggle('pulse', pulse);
+  }
+
+  /* ── Show download result ───────────────────────────────────── */
+  async function showDownload(job) {
+    document.getElementById('convertBtn').disabled = false;
+    showSection('downloadSection');
+
+    const isAudio = selectedFormat === 'mp3';
+    document.getElementById('dlIcon').innerHTML = isAudio
+      ? '<i class="bi bi-music-note-beamed"></i>'
+      : '<i class="bi bi-camera-video-fill"></i>';
+    document.getElementById('dlFilename').textContent = job.filename || 'file';
+
+    // wire download button
+    document.getElementById('dlBtn').onclick = () => {
+      window.location = `/api/download/${currentJobId}`;
+    };
+
+    // fetch save path
+    try {
+      const r = await fetch('/api/save-location');
+      const d = await r.json();
+      document.getElementById('savePath').textContent = d.path || '~/Downloads/MediaConverter';
+    } catch {}
+
+    // add to history
+    addHistory({ filename: job.filename, jobId: currentJobId, fmt: selectedFormat });
+  }
+
+  /* ── History ────────────────────────────────────────────────── */
+  function addHistory({ filename, jobId, fmt }) {
+    history.unshift({ filename, jobId, fmt });
+    if (history.length > 6) history.pop();
+    renderHistory();
+  }
+
+  function renderHistory() {
+    const list = document.getElementById('historyList');
+    list.innerHTML = '';
+    history.forEach(h => {
+      const icon = h.fmt === 'mp3' ? 'bi-music-note-beamed' : 'bi-camera-video-fill';
+      const div  = document.createElement('div');
+      div.className = 'hist-item';
+      div.innerHTML = `
+        <i class="bi ${icon} hi-icon" style="color:var(--accent)"></i>
+        <span class="hi-name">${h.filename || '—'}</span>
+        <span class="hi-dl" onclick="window.location='/api/download/${h.jobId}'">
+          <i class="bi bi-download me-1"></i>DL
+        </span>`;
+      list.appendChild(div);
+    });
+    document.getElementById('historySection').style.display = history.length ? 'block' : 'none';
+  }
+
+  /* ── Helpers ────────────────────────────────────────────────── */
+  function showSection(id) { document.getElementById(id).style.display = 'block'; }
+  function hideSection(id) { document.getElementById(id).style.display = 'none';  }
+
+  function resetResult() {
+    hideSection('progressSection');
+    hideSection('downloadSection');
+    document.getElementById('progBar').style.width = '0%';
+    document.getElementById('progPct').textContent  = '0%';
+    document.getElementById('progSpeed').textContent = '';
+    document.getElementById('progEta').textContent   = '';
+  }
+
+  function showError(msg) {
+    document.getElementById('errorMsg').textContent = msg;
+    document.getElementById('errorBox').style.display = 'block';
+  }
+  function hideError() { document.getElementById('errorBox').style.display = 'none'; }
+
+  /* ── Enter key triggers Fetch ───────────────────────────────── */
+  document.getElementById('urlInput').addEventListener('keydown', e => {
+    if (e.key === 'Enter') fetchInfo();
+  });
+</script>
+</body>
+</html>
